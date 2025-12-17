@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Reversi: Modular</title>
+    <title>AI Reversi: N-Tuple TD Learning</title>
     <style>
         :root {
             --bg-color: #FAFAFA;
@@ -139,32 +139,6 @@
         .training-stat { font-size: 2em; margin-bottom: 10px; font-weight: bold; }
         .training-log { font-size: 12px; color: #A1A1AA; height: 100px; overflow: hidden; text-align: center; white-space: pre-wrap;}
 
-        /* Brain Map Visualization */
-        .brain-panel {
-            background: #fff;
-            padding: 15px;
-            border: 1px solid var(--accent-border);
-            border-radius: 8px;
-        }
-        .brain-title { font-size: 12px; font-weight: bold; margin-bottom: 8px; text-transform: uppercase; color: var(--text-sub); display: flex; justify-content: space-between; }
-        .brain-grid {
-            display: grid;
-            grid-template-columns: repeat(8, 1fr);
-            gap: 2px;
-            background: #eee;
-            border: 2px solid #333;
-        }
-        .brain-cell {
-            aspect-ratio: 1;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 9px;
-            color: #fff;
-            font-family: monospace;
-            text-shadow: 0 1px 2px rgba(0,0,0,0.5);
-        }
-
         /* Controls */
         .controls {
             display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;
@@ -192,12 +166,12 @@
 
     <header>
         <div>
-            <h1>AI Reversi</h1>
+            <h1>N-Tuple AI</h1>
             <div class="status" id="status">Initializing...</div>
         </div>
         <div class="header-stats">
             <div class="data-counter" id="total-games-display">GAMES: 0</div>
-            <div class="data-counter" id="storage-size-display">SIZE: 0 KB</div>
+            <div class="data-counter" id="speed-display">SPD: 0 g/s</div>
         </div>
     </header>
 
@@ -208,7 +182,7 @@
                 <div class="training-stat" id="train-count">0</div>
                 <div style="font-size: 12px; margin-bottom: 20px;">GAMES PLAYED</div>
                 <div class="training-log" id="train-log">Initializing arena...</div>
-                <button class="stop-btn" id="stop-train-btn" style="display:block; margin-top:20px;">STOP & SAVE</button>
+                <button class="stop-btn" id="stop-train-btn" style="display:block; margin-top:20px;">STOP</button>
             </div>
 
             <div class="thinking-indicator" id="think-indicator">AI THINKING...</div>
@@ -221,17 +195,12 @@
             </div>
             <div class="btn-group">
                 <button onclick="ui.resetGame()">Reset</button>
-                <button class="train-btn" onclick="ui.startTraining()">Auto Train</button>
-                <button style="border-color:#EF4444; color:#EF4444;" onclick="ui.resetBrain()">Reset Brain</button>
+                <button class="train-btn" onclick="ui.startTraining()">Train 10k</button>
             </div>
         </div>
-
-        <div class="brain-panel">
-            <div class="brain-title">
-                <span>AI Brain Map</span>
-                <span style="font-weight:normal; font-size:10px; color:#aaa;">Red=Bad / Blue=Good</span>
-            </div>
-            <div class="brain-grid" id="brain-grid"></div>
+        
+        <div style="font-size: 11px; color: #aaa; text-align: center;">
+            N-Tuple Network (4 patterns x 8 symmetries)
         </div>
     </div>
 
@@ -241,66 +210,34 @@
                 this.rows = 8; this.cols = 8;
                 this.board = []; this.currentPlayer = 1; this.gameActive = false;
                 
-                // Initialize Worker from separate file
-                // NOTE: Must run via Local Server (Live Server) for this to work
+                // --- Worker Init ---
                 try {
-                    this.worker = new Worker('ai-worker.js');
+                    // 前回作成した worker.js を指定
+                    this.worker = new Worker('worker.js');
                 } catch(e) {
-                    alert("Error: Cannot load 'ai-worker.js'.\nPlease run this via a Local Server (like VS Code Live Server).");
+                    alert("Error: Cannot load 'worker.js'.\nPlease run via Local Server.");
                     console.error(e);
                 }
                 
                 this.initDOM();
                 this.setupWorkerListeners();
+                
+                // AI初期化
+                this.worker.postMessage({ type: 'INIT' });
+                this.resetGame();
             }
 
             initDOM() {
                 this.boardEl = document.getElementById('board');
                 this.statusEl = document.getElementById('status');
                 this.totalGamesEl = document.getElementById('total-games-display');
-                this.storageSizeEl = document.getElementById('storage-size-display');
+                this.speedEl = document.getElementById('speed-display');
                 this.trainOverlay = document.getElementById('train-overlay');
                 this.trainCount = document.getElementById('train-count');
                 this.trainLog = document.getElementById('train-log');
                 this.thinkInd = document.getElementById('think-indicator');
-                this.brainGrid = document.getElementById('brain-grid');
                 
                 this.renderBoard();
-                this.renderBrainGrid();
-            }
-
-            renderBrainGrid() {
-                this.brainGrid.innerHTML = '';
-                for(let r=0; r<8; r++) {
-                    for(let c=0; c<8; c++) {
-                        const cell = document.createElement('div');
-                        cell.className = 'brain-cell';
-                        cell.id = `brain-${r}-${c}`;
-                        cell.innerText = '0';
-                        this.brainGrid.appendChild(cell);
-                    }
-                }
-            }
-
-            updateBrainMap(weights) {
-                if(!weights) return;
-                for(let r=0; r<8; r++) {
-                    for(let c=0; c<8; c++) {
-                        const val = Math.round(weights[r][c]);
-                        const cell = document.getElementById(`brain-${r}-${c}`);
-                        cell.innerText = val;
-                        
-                        let color;
-                        if(val > 0) {
-                            const intensity = Math.min(255, val * 2.5);
-                            color = `rgb(0, ${100 + intensity/2}, ${intensity + 50})`;
-                        } else {
-                            const intensity = Math.min(255, Math.abs(val) * 2.5);
-                            color = `rgb(${intensity + 50}, ${50}, ${50})`;
-                        }
-                        cell.style.backgroundColor = color;
-                    }
-                }
             }
 
             setupWorkerListeners() {
@@ -310,41 +247,37 @@
                 };
 
                 this.worker.onmessage = (e) => {
-                    const { type, move, count, lastWinner, winRate, totalGames, size, weights } = e.data;
+                    const { type, data, move } = e.data;
 
-                    if(type === 'READY') {
-                        this.statusEl.innerText = "Ready.";
-                        this.updateStats(totalGames, size);
-                        if(weights) this.updateBrainMap(weights);
-                        this.resetGame();
-                    }
-                    else if(type === 'MOVE_RESULT') {
-                        this.thinkInd.style.display = 'none';
-                        if(move) this.executeMove(move.r, move.c, this.currentPlayer);
-                        else { alert("AI Passes"); this.nextTurn(); }
-                    }
-                    else if(type === 'TRAIN_UPDATE') {
-                        this.trainCount.innerText = count;
-                        if(size) this.updateStats(totalGames, size);
-                        if(weights) this.updateBrainMap(weights);
-                        this.trainLog.innerText = `Session: ${count}\nLatest: ${lastWinner}\nWinRate: ${winRate}%`;
-                    }
-                    else if(type === 'TRAIN_STOPPED') {
-                        this.trainOverlay.classList.remove('active');
-                        this.resetGame();
-                    }
-                    else if(type === 'DATA_UPDATED') {
-                        this.updateStats(totalGames, size);
-                        if(weights) this.updateBrainMap(weights);
+                    switch(type) {
+                        case 'PROGRESS':
+                            // 学習進捗更新
+                            this.trainCount.innerText = data.games.toLocaleString();
+                            this.totalGamesEl.innerText = `GAMES: ${data.games.toLocaleString()}`;
+                            this.speedEl.innerText = `SPD: ${data.speed}/s`;
+                            this.trainLog.innerText = `Black: ${data.stats.black} | White: ${data.stats.white}`;
+                            break;
+                        
+                        case 'TRAINING_COMPLETE':
+                            this.stopTrainingUI();
+                            alert("Training Batch Complete!");
+                            break;
+
+                        case 'MOVE_DECIDED':
+                            // AIが手を決めた
+                            this.thinkInd.style.display = 'none';
+                            const moveIdx = e.data.move; // 0-63 index
+                            if (moveIdx === -1) {
+                                alert("AI Passes");
+                                this.nextTurn();
+                            } else {
+                                const r = Math.floor(moveIdx / 8);
+                                const c = moveIdx % 8;
+                                this.executeMove(r, c, 2); // 2 = White (AI)
+                            }
+                            break;
                     }
                 };
-
-                this.worker.postMessage({ type: 'INIT' });
-            }
-
-            updateStats(games, size) {
-                if(games !== undefined) this.totalGamesEl.innerText = `GAMES: ${games}`;
-                if(size !== undefined && size !== null) this.storageSizeEl.innerText = `SIZE: ${size} KB`;
             }
 
             renderBoard() {
@@ -360,6 +293,19 @@
                 }
             }
 
+            // --- Game Logic (Frontend) ---
+
+            resetGame() {
+                // 0:Empty, 1:Black, 2:White
+                this.board = Array(8).fill(0).map(()=>Array(8).fill(0));
+                this.board[3][3]=2; this.board[4][4]=2; this.board[3][4]=1; this.board[4][3]=1;
+                this.currentPlayer = 1;
+                this.gameActive = true;
+                this.lastMove = null;
+                this.statusEl.innerText = "Black (You) vs White (AI)";
+                this.updateView();
+            }
+
             updateView() {
                 let b=0, w=0;
                 document.querySelectorAll('.cell').forEach(cell => {
@@ -367,6 +313,7 @@
                     const val = this.board[r][c];
                     cell.innerHTML = ''; 
                     cell.classList.remove('legal', 'last-move');
+                    
                     if(val !== 0) {
                         const stone = document.createElement('div');
                         stone.className = `stone ${val===1?'black':'white'}`;
@@ -378,6 +325,7 @@
                 document.getElementById('score-b').innerText = b;
                 document.getElementById('score-w').innerText = w;
 
+                // ハイライト処理 (Human Turn)
                 if(this.currentPlayer === 1 && this.gameActive) {
                     const moves = this.getValidMoves(this.board, 1);
                     moves.forEach(m => {
@@ -385,16 +333,6 @@
                         if(el) el.classList.add('legal');
                     });
                 }
-            }
-
-            resetGame() {
-                this.board = Array(8).fill(0).map(()=>Array(8).fill(0));
-                this.board[3][3]=2; this.board[4][4]=2; this.board[3][4]=1; this.board[4][3]=1;
-                this.currentPlayer = 1;
-                this.gameActive = true;
-                this.lastMove = null;
-                this.statusEl.innerText = "Black (You) vs White (AI)";
-                this.updateView();
             }
 
             handleHumanClick(r, c) {
@@ -411,20 +349,28 @@
             }
 
             nextTurn() {
-                this.currentPlayer = 3 - this.currentPlayer;
+                this.currentPlayer = 3 - this.currentPlayer; // Switch 1 <-> 2
+                
+                // パス判定
                 const moves = this.getValidMoves(this.board, this.currentPlayer);
                 if(moves.length === 0) {
+                    // 相手も打てない -> 終了
                     if(this.getValidMoves(this.board, 3-this.currentPlayer).length === 0) {
-                        this.endGame(); return;
+                        this.endGame(); 
+                        return;
                     }
+                    // パス
                     alert(`${this.currentPlayer===1?'Black':'White'} passes!`);
                     this.currentPlayer = 3 - this.currentPlayer;
+                    // パス後、AIの手番なら思考へ
                     if(this.currentPlayer === 2) setTimeout(()=>this.askAI(), 500);
                     return;
                 }
+
                 if(this.currentPlayer === 2) {
                     this.statusEl.innerText = "AI Thinking...";
                     this.thinkInd.style.display = 'block';
+                    // 少し待ってからWorkerへ送信 (描画更新のため)
                     setTimeout(() => this.askAI(), 50); 
                 } else {
                     this.statusEl.innerText = "Your Turn";
@@ -432,19 +378,36 @@
                 }
             }
 
-            askAI() { this.worker.postMessage({ type: 'GET_MOVE', payload: { board: this.board, player: 2 } }); }
+            askAI() {
+                // UIのボード(2次元配列: 0,1,2) を Worker用(1次元配列: 0,1,-1) に変換
+                // UI: Black=1, White=2, Empty=0
+                // Worker: Black=1, White=-1, Empty=0
+                const flatBoard = new Int8Array(64);
+                let idx = 0;
+                for(let r=0; r<8; r++) {
+                    for(let c=0; c<8; c++) {
+                        const val = this.board[r][c];
+                        flatBoard[idx++] = (val === 1) ? 1 : (val === 2 ? -1 : 0);
+                    }
+                }
+                
+                // Workerへ送信
+                this.worker.postMessage({ 
+                    type: 'GET_MOVE', 
+                    payload: { board: flatBoard, turn: -1 } // AI is White(-1)
+                }); 
+            }
 
             endGame() {
                 this.gameActive = false;
                 let b = +document.getElementById('score-b').innerText;
                 let w = +document.getElementById('score-w').innerText;
-                let winner = b > w ? 1 : (w > b ? 2 : 0);
-                let msg = winner === 1 ? "You Win!" : (winner === 2 ? "AI Wins" : "Draw");
+                let msg = b > w ? "You Win!" : (w > b ? "AI Wins" : "Draw");
                 this.statusEl.innerText = msg;
                 alert(msg);
-                this.worker.postMessage({ type: 'TRAIN_END_GAME', payload: { board: this.board, winner: winner, aiPlayer: 2 } });
             }
 
+            // --- Reversi Logic Utils ---
             isValidMove(b, r, c, p) {
                 if(b[r][c]!==0) return false;
                 const dirs = [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
@@ -477,18 +440,21 @@
                 return ms;
             }
 
+            // --- Training Control ---
             startTraining() {
                 this.trainOverlay.classList.add('active');
-                this.worker.postMessage({ type: 'START_TRAINING' });
+                this.worker.postMessage({ type: 'START_TRAINING', payload: { batchSize: 10000 } });
                 document.getElementById('stop-train-btn').onclick = () => {
                     this.worker.postMessage({ type: 'STOP_TRAINING' });
+                    this.stopTrainingUI();
                 };
             }
-
-            resetBrain() {
-                if(confirm("Reset Everything?")) this.worker.postMessage({ type: 'RESET_BRAIN' });
+            stopTrainingUI() {
+                this.trainOverlay.classList.remove('active');
+                this.resetGame();
             }
         }
+
         const ui = new GameUI();
     </script>
 </body>
