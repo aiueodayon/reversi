@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Reversi: Modular</title>
+    <style>
+        :root {
+            --bg-color: #FAFAFA;
+            --board-bg: #E5E5E5;
+            --cell-bg: #FFFFFF;
+            --cell-hover: #F4F4F5;
+            --text-main: #18181B;
+            --text-sub: #71717A;
+            --black-stone: #27272A;
+            --white-stone: #FFFFFF;
+            --accent-border: #D4D4D8;
+            --highlight: #10B981;
+            --last-move-color: #EF4444;
+            --training-bg: #18181B;
+            --training-text: #34D399;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+        }
+
+        header {
+            width: 100%;
+            max-width: 480px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            margin-bottom: 24px;
+            border-bottom: 1px solid var(--accent-border);
+            padding-bottom: 12px;
+        }
+
+        h1 {
+            font-size: 20px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            margin: 0;
+            text-transform: uppercase;
+        }
+
+        .header-stats { text-align: right; }
+        
+        .data-counter {
+            font-size: 11px; font-family: monospace; background: #eee;
+            padding: 4px 8px; border-radius: 4px; color: #555;
+            display: inline-block; margin-left: 5px;
+        }
+
+        .status {
+            font-size: 14px; color: var(--text-sub); font-weight: 500; margin-top: 4px;
+        }
+
+        .main-wrapper {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            width: 100%;
+            max-width: 480px;
+        }
+
+        .board-container {
+            width: 100%;
+            padding: 12px;
+            background-color: #fff;
+            box-shadow: 0 20px 40px -10px rgba(0,0,0,0.05);
+            border: 1px solid var(--board-bg);
+            position: relative;
+        }
+
+        .board {
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            grid-template-rows: repeat(8, 1fr);
+            gap: 1px;
+            background-color: var(--board-bg);
+            width: 100%;
+            aspect-ratio: 1 / 1;
+        }
+
+        .cell {
+            background-color: var(--cell-bg);
+            position: relative;
+            cursor: pointer;
+            width: 100%; height: 100%;
+        }
+
+        .cell.legal:hover { background-color: var(--cell-hover); }
+
+        .cell.last-move::before {
+            content: ''; position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%); width: 20px; height: 20px;
+            border: 2px solid var(--last-move-color); border-radius: 50%;
+            z-index: 20; box-shadow: 0 0 8px rgba(239, 68, 68, 0.4);
+        }
+
+        .stone {
+            width: 80%; height: 80%; border-radius: 50%;
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); z-index: 10;
+        }
+        .stone.black { background: radial-gradient(circle at 30% 30%, #404040, var(--black-stone)); }
+        .stone.white { background: radial-gradient(circle at 30% 30%, #ffffff, #f0f0f0); border: 1px solid #E4E4E7; }
+        
+        .cell.legal::after {
+            content: ''; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            width: 8px; height: 8px; background-color: rgba(0,0,0,0.1); border-radius: 50%;
+        }
+
+        /* Training Overlay */
+        .training-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(24, 24, 27, 0.95);
+            z-index: 100;
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: var(--training-text);
+            font-family: monospace;
+        }
+        .training-overlay.active { display: flex; }
+        .training-stat { font-size: 2em; margin-bottom: 10px; font-weight: bold; }
+        .training-log { font-size: 12px; color: #A1A1AA; height: 100px; overflow: hidden; text-align: center; white-space: pre-wrap;}
+
+        /* Brain Map Visualization */
+        .brain-panel {
+            background: #fff;
+            padding: 15px;
+            border: 1px solid var(--accent-border);
+            border-radius: 8px;
+        }
+        .brain-title { font-size: 12px; font-weight: bold; margin-bottom: 8px; text-transform: uppercase; color: var(--text-sub); display: flex; justify-content: space-between; }
+        .brain-grid {
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            gap: 2px;
+            background: #eee;
+            border: 2px solid #333;
+        }
+        .brain-cell {
+            aspect-ratio: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 9px;
+            color: #fff;
+            font-family: monospace;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+        }
+
+        /* Controls */
+        .controls {
+            display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;
+        }
+        .btn-group { display: flex; gap: 8px; }
+        button {
+            background-color: transparent; border: 1px solid var(--text-main); color: var(--text-main);
+            padding: 8px 16px; font-size: 11px; font-weight: 600; cursor: pointer;
+            letter-spacing: 1px; text-transform: uppercase; transition: all 0.2s;
+        }
+        button:hover { background-color: var(--text-main); color: white; }
+        button.train-btn { border-color: var(--highlight); color: var(--highlight); }
+        button.train-btn:hover { background-color: var(--highlight); color: white; }
+        button.stop-btn { border-color: #EF4444; color: #EF4444; display: none; }
+        button.stop-btn:hover { background-color: #EF4444; color: white; }
+
+        .thinking-indicator {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.8); color: white; padding: 8px 16px; font-size: 12px;
+            display: none; z-index: 50; border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div>
+            <h1>AI Reversi</h1>
+            <div class="status" id="status">Initializing...</div>
+        </div>
+        <div class="header-stats">
+            <div class="data-counter" id="total-games-display">GAMES: 0</div>
+            <div class="data-counter" id="storage-size-display">SIZE: 0 KB</div>
+        </div>
+    </header>
+
+    <div class="main-wrapper">
+        <div class="board-container">
+            <div class="training-overlay" id="train-overlay">
+                <div style="color: #fff; margin-bottom: 20px;">FAST TRAINING MODE</div>
+                <div class="training-stat" id="train-count">0</div>
+                <div style="font-size: 12px; margin-bottom: 20px;">GAMES PLAYED</div>
+                <div class="training-log" id="train-log">Initializing arena...</div>
+                <button class="stop-btn" id="stop-train-btn" style="display:block; margin-top:20px;">STOP & SAVE</button>
+            </div>
+
+            <div class="thinking-indicator" id="think-indicator">AI THINKING...</div>
+            <div class="board" id="board"></div>
+        </div>
+
+        <div class="controls">
+            <div style="font-weight: bold; font-size: 14px;">
+                B:<span id="score-b">2</span> W:<span id="score-w">2</span>
+            </div>
+            <div class="btn-group">
+                <button onclick="ui.resetGame()">Reset</button>
+                <button class="train-btn" onclick="ui.startTraining()">Auto Train</button>
+                <button style="border-color:#EF4444; color:#EF4444;" onclick="ui.resetBrain()">Reset Brain</button>
+            </div>
+        </div>
+
+        <div class="brain-panel">
+            <div class="brain-title">
+                <span>AI Brain Map</span>
+                <span style="font-weight:normal; font-size:10px; color:#aaa;">Red=Bad / Blue=Good</span>
+            </div>
+            <div class="brain-grid" id="brain-grid"></div>
+        </div>
+    </div>
+
+    <script>
+        class GameUI {
+            constructor() {
+                this.rows = 8; this.cols = 8;
+                this.board = []; this.currentPlayer = 1; this.gameActive = false;
+                
+                // Initialize Worker from separate file
+                // NOTE: Must run via Local Server (Live Server) for this to work
+                try {
+                    this.worker = new Worker('ai-worker.js');
+                } catch(e) {
+                    alert("Error: Cannot load 'ai-worker.js'.\nPlease run this via a Local Server (like VS Code Live Server).");
+                    console.error(e);
+                }
+                
+                this.initDOM();
+                this.setupWorkerListeners();
+            }
+
+            initDOM() {
+                this.boardEl = document.getElementById('board');
+                this.statusEl = document.getElementById('status');
+                this.totalGamesEl = document.getElementById('total-games-display');
+                this.storageSizeEl = document.getElementById('storage-size-display');
+                this.trainOverlay = document.getElementById('train-overlay');
+                this.trainCount = document.getElementById('train-count');
+                this.trainLog = document.getElementById('train-log');
+                this.thinkInd = document.getElementById('think-indicator');
+                this.brainGrid = document.getElementById('brain-grid');
+                
+                this.renderBoard();
+                this.renderBrainGrid();
+            }
+
+            renderBrainGrid() {
+                this.brainGrid.innerHTML = '';
+                for(let r=0; r<8; r++) {
+                    for(let c=0; c<8; c++) {
+                        const cell = document.createElement('div');
+                        cell.className = 'brain-cell';
+                        cell.id = `brain-${r}-${c}`;
+                        cell.innerText = '0';
+                        this.brainGrid.appendChild(cell);
+                    }
+                }
+            }
+
+            updateBrainMap(weights) {
+                if(!weights) return;
+                for(let r=0; r<8; r++) {
+                    for(let c=0; c<8; c++) {
+                        const val = Math.round(weights[r][c]);
+                        const cell = document.getElementById(`brain-${r}-${c}`);
+                        cell.innerText = val;
+                        
+                        let color;
+                        if(val > 0) {
+                            const intensity = Math.min(255, val * 2.5);
+                            color = `rgb(0, ${100 + intensity/2}, ${intensity + 50})`;
+                        } else {
+                            const intensity = Math.min(255, Math.abs(val) * 2.5);
+                            color = `rgb(${intensity + 50}, ${50}, ${50})`;
+                        }
+                        cell.style.backgroundColor = color;
+                    }
+                }
+            }
+
+            setupWorkerListeners() {
+                this.worker.onerror = (e) => {
+                    console.error("Worker Error:", e);
+                    this.statusEl.innerText = "Error loading AI.";
+                };
+
+                this.worker.onmessage = (e) => {
+                    const { type, move, count, lastWinner, winRate, totalGames, size, weights } = e.data;
+
+                    if(type === 'READY') {
+                        this.statusEl.innerText = "Ready.";
+                        this.updateStats(totalGames, size);
+                        if(weights) this.updateBrainMap(weights);
+                        this.resetGame();
+                    }
+                    else if(type === 'MOVE_RESULT') {
+                        this.thinkInd.style.display = 'none';
+                        if(move) this.executeMove(move.r, move.c, this.currentPlayer);
+                        else { alert("AI Passes"); this.nextTurn(); }
+                    }
+                    else if(type === 'TRAIN_UPDATE') {
+                        this.trainCount.innerText = count;
+                        if(size) this.updateStats(totalGames, size);
+                        if(weights) this.updateBrainMap(weights);
+                        this.trainLog.innerText = `Session: ${count}\nLatest: ${lastWinner}\nWinRate: ${winRate}%`;
+                    }
+                    else if(type === 'TRAIN_STOPPED') {
+                        this.trainOverlay.classList.remove('active');
+                        this.resetGame();
+                    }
+                    else if(type === 'DATA_UPDATED') {
+                        this.updateStats(totalGames, size);
+                        if(weights) this.updateBrainMap(weights);
+                    }
+                };
+
+                this.worker.postMessage({ type: 'INIT' });
+            }
+
+            updateStats(games, size) {
+                if(games !== undefined) this.totalGamesEl.innerText = `GAMES: ${games}`;
+                if(size !== undefined && size !== null) this.storageSizeEl.innerText = `SIZE: ${size} KB`;
+            }
+
+            renderBoard() {
+                this.boardEl.innerHTML = '';
+                for(let r=0; r<8; r++) {
+                    for(let c=0; c<8; c++) {
+                        const cell = document.createElement('div');
+                        cell.className = 'cell';
+                        cell.dataset.r = r; cell.dataset.c = c;
+                        cell.onclick = () => this.handleHumanClick(r, c);
+                        this.boardEl.appendChild(cell);
+                    }
+                }
+            }
+
+            updateView() {
+                let b=0, w=0;
+                document.querySelectorAll('.cell').forEach(cell => {
+                    const r = +cell.dataset.r; const c = +cell.dataset.c;
+                    const val = this.board[r][c];
+                    cell.innerHTML = ''; 
+                    cell.classList.remove('legal', 'last-move');
+                    if(val !== 0) {
+                        const stone = document.createElement('div');
+                        stone.className = `stone ${val===1?'black':'white'}`;
+                        cell.appendChild(stone);
+                        if(val===1) b++; else w++;
+                    }
+                    if(this.lastMove && this.lastMove.r===r && this.lastMove.c===c) cell.classList.add('last-move');
+                });
+                document.getElementById('score-b').innerText = b;
+                document.getElementById('score-w').innerText = w;
+
+                if(this.currentPlayer === 1 && this.gameActive) {
+                    const moves = this.getValidMoves(this.board, 1);
+                    moves.forEach(m => {
+                        const el = document.querySelector(`.cell[data-r="${m.r}"][data-c="${m.c}"]`);
+                        if(el) el.classList.add('legal');
+                    });
+                }
+            }
+
+            resetGame() {
+                this.board = Array(8).fill(0).map(()=>Array(8).fill(0));
+                this.board[3][3]=2; this.board[4][4]=2; this.board[3][4]=1; this.board[4][3]=1;
+                this.currentPlayer = 1;
+                this.gameActive = true;
+                this.lastMove = null;
+                this.statusEl.innerText = "Black (You) vs White (AI)";
+                this.updateView();
+            }
+
+            handleHumanClick(r, c) {
+                if(!this.gameActive || this.currentPlayer !== 1) return;
+                if(!this.isValidMove(this.board, r, c, 1)) return;
+                this.executeMove(r, c, 1);
+            }
+
+            executeMove(r, c, player) {
+                this.applyMoveLogic(this.board, r, c, player);
+                this.lastMove = { r, c };
+                this.updateView();
+                this.nextTurn();
+            }
+
+            nextTurn() {
+                this.currentPlayer = 3 - this.currentPlayer;
+                const moves = this.getValidMoves(this.board, this.currentPlayer);
+                if(moves.length === 0) {
+                    if(this.getValidMoves(this.board, 3-this.currentPlayer).length === 0) {
+                        this.endGame(); return;
+                    }
+                    alert(`${this.currentPlayer===1?'Black':'White'} passes!`);
+                    this.currentPlayer = 3 - this.currentPlayer;
+                    if(this.currentPlayer === 2) setTimeout(()=>this.askAI(), 500);
+                    return;
+                }
+                if(this.currentPlayer === 2) {
+                    this.statusEl.innerText = "AI Thinking...";
+                    this.thinkInd.style.display = 'block';
+                    setTimeout(() => this.askAI(), 50); 
+                } else {
+                    this.statusEl.innerText = "Your Turn";
+                    this.updateView();
+                }
+            }
+
+            askAI() { this.worker.postMessage({ type: 'GET_MOVE', payload: { board: this.board, player: 2 } }); }
+
+            endGame() {
+                this.gameActive = false;
+                let b = +document.getElementById('score-b').innerText;
+                let w = +document.getElementById('score-w').innerText;
+                let winner = b > w ? 1 : (w > b ? 2 : 0);
+                let msg = winner === 1 ? "You Win!" : (winner === 2 ? "AI Wins" : "Draw");
+                this.statusEl.innerText = msg;
+                alert(msg);
+                this.worker.postMessage({ type: 'TRAIN_END_GAME', payload: { board: this.board, winner: winner, aiPlayer: 2 } });
+            }
+
+            isValidMove(b, r, c, p) {
+                if(b[r][c]!==0) return false;
+                const dirs = [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
+                for(let d of dirs) if(this.canFlip(b,r,c,d,p)) return true;
+                return false;
+            }
+            canFlip(b, r, c, d, p) {
+                let nr=r+d[0], nc=c+d[1], opp=3-p, hasOpp=false;
+                while(nr>=0 && nr<8 && nc>=0 && nc<8) {
+                    if(b[nr][nc]===opp) hasOpp=true;
+                    else if(b[nr][nc]===p) return hasOpp;
+                    else return false;
+                    nr+=d[0]; nc+=d[1];
+                }
+                return false;
+            }
+            applyMoveLogic(b, r, c, p) {
+                b[r][c] = p;
+                const dirs = [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
+                for(let d of dirs) {
+                    if(this.canFlip(b,r,c,d,p)) {
+                        let nr=r+d[0], nc=c+d[1];
+                        while(b[nr][nc]!==p) { b[nr][nc]=p; nr+=d[0]; nc+=d[1]; }
+                    }
+                }
+            }
+            getValidMoves(b, p) {
+                const ms=[];
+                for(let r=0;r<8;r++) for(let c=0;c<8;c++) if(this.isValidMove(b,r,c,p)) ms.push({r,c});
+                return ms;
+            }
+
+            startTraining() {
+                this.trainOverlay.classList.add('active');
+                this.worker.postMessage({ type: 'START_TRAINING' });
+                document.getElementById('stop-train-btn').onclick = () => {
+                    this.worker.postMessage({ type: 'STOP_TRAINING' });
+                };
+            }
+
+            resetBrain() {
+                if(confirm("Reset Everything?")) this.worker.postMessage({ type: 'RESET_BRAIN' });
+            }
+        }
+        const ui = new GameUI();
+    </script>
+</body>
+</html>
