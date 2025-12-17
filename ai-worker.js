@@ -1,12 +1,12 @@
 // ==========================================
-// AI Worker Logic (Mobility + Stability + Smarter Training)
+// AI Worker Logic (V6: God Mode - Hard Coded Strength)
 // ==========================================
 
 // --- Storage Manager ---
 class StorageManager {
     constructor() {
-        // ロジックが変わったのでDBバージョンを変更してリセット
-        this.dbName = 'ReversiNeuralDB_v5_Final'; 
+        // ロジックを根本的に変えるためDBを刷新
+        this.dbName = 'ReversiNeuralDB_v6_GodMode';
         this.db = null;
     }
     async init() {
@@ -25,13 +25,9 @@ class StorageManager {
         const tx = this.db.transaction(['brain'], 'readwrite');
         const data = { id: 'current', weights: weights, totalGames: totalGames };
         tx.objectStore('brain').put(data);
-        
         const jsonStr = JSON.stringify(data);
         const sizeKB = (new Blob([jsonStr]).size / 1024).toFixed(2);
-        
-        return new Promise(r => {
-            tx.oncomplete = () => r(sizeKB);
-        });
+        return new Promise(r => { tx.oncomplete = () => r(sizeKB); });
     }
     async loadData() {
         if(!this.db) await this.init();
@@ -48,21 +44,28 @@ class UltimateAI {
         this.storage = new StorageManager();
         this.totalGames = 0;
         
-        // 初期の重み
-        // 確定石ボーナスをevaluateで加算するため、角の基礎点は少し抑えめでもOKですが
-        // 学習の指針として高めにしておきます。
+        // 【修正3】初期重みの厳格化
+        // 危険地帯（X, C）を極端に低く設定し、初期状態から「絶対にそこに打ちたくない」ようにする
         this.defaultWeights = [
-            [100, -20, 20,  5,  5, 20, -20, 100],
-            [-20, -40, -5, -5, -5, -5, -40, -20],
-            [ 20,  -5, 15,  3,  3, 15,  -5,  20],
-            [  5,  -5,  3,  3,  3,  3,  -5,   5],
-            [  5,  -5,  3,  3,  3,  3,  -5,   5],
-            [ 20,  -5, 15,  3,  3, 15,  -5,  20],
-            [-20, -40, -5, -5, -5, -5, -40, -20],
-            [100, -20, 20,  5,  5, 20, -20, 100]
+            [ 120, -60,  20,   5,   5,  20, -60, 120],
+            [ -60, -80,  -5,  -5,  -5,  -5, -80, -60], // X打ちは -80
+            [  20,  -5,  15,   3,   3,  15,  -5,  20],
+            [   5,  -5,   3,   3,   3,   3,  -5,   5],
+            [   5,  -5,   3,   3,   3,   3,  -5,   5],
+            [  20,  -5,  15,   3,   3,  15,  -5,  20],
+            [ -60, -80,  -5,  -5,  -5,  -5, -80, -60],
+            [ 120, -60,  20,   5,   5,  20, -60, 120]
         ];
         this.weights = JSON.parse(JSON.stringify(this.defaultWeights));
         this.directions = [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
+
+        // 危険地帯の定義（角が空いている時の周辺マス）
+        this.dangerMap = {
+            '0,0': [{r:0,c:1}, {r:1,c:0}, {r:1,c:1}], // Corner: TL -> Right, Down, Diagonal
+            '0,7': [{r:0,c:6}, {r:1,c:7}, {r:1,c:6}], // Corner: TR
+            '7,0': [{r:6,c:0}, {r:7,c:1}, {r:6,c:1}], // Corner: BL
+            '7,7': [{r:7,c:6}, {r:6,c:7}, {r:6,c:6}]  // Corner: BR
+        };
     }
 
     async load() {
@@ -87,21 +90,23 @@ class UltimateAI {
 
     async train(board, winner, aiPlayer) {
         if(winner === 0) return null;
-        const learningRate = 1.5;
+        const learningRate = 1.0; // 学習率は控えめに（基本性能が高いので微調整で十分）
         const sign = (winner === aiPlayer) ? 1 : -1;
         
         for(let r=0; r<8; r++) {
             for(let c=0; c<8; c++) {
                 if(board[r][c] === aiPlayer) {
-                    // 角は重みが固定されがちなので、変動幅を少し小さくしても良いが
-                    // ここでは単純化して一律適用
-                    let update = sign * learningRate;
-                    this.weights[r][c] += update;
-                    this.weights[r][7-c] += update;
-                    this.weights[7-r][c] += update;
-                    this.weights[7-r][7-c] += update;
+                    let w = this.weights[r][c];
+                    // 重みの極端な崩壊を防ぐため、元の値の符号を維持しようとする力を働かせる（正則化的な処理）
+                    w += sign * learningRate;
                     
-                    this.weights[r][c] = Math.max(-500, Math.min(500, this.weights[r][c]));
+                    // クランプ処理（極端な値になりすぎないように）
+                    this.weights[r][c] = Math.max(-200, Math.min(200, w));
+                    
+                    // 対称性の更新
+                    this.weights[r][7-c] = this.weights[r][c];
+                    this.weights[7-r][c] = this.weights[r][c];
+                    this.weights[7-r][7-c] = this.weights[r][c];
                 }
             }
         }
@@ -114,15 +119,23 @@ class UltimateAI {
         if(moves.length === 0) return null;
         
         const empty = this.countEmpty(board);
-        // 終盤14手読み切り、それ以外は4手読み
-        let maxDepth = (empty <= 14) ? empty : 4; 
+        
+        // 【修正1】探索深さ（Search Depth）の強化
+        // 中盤は深さ6（人間にはかなり読みづらいレベル）、終盤14手は完全読み切り
+        let maxDepth = (empty <= 14) ? empty : 6;
         
         let bestMove = moves[0];
         let alpha = -Infinity;
         let beta = Infinity;
 
-        // Move Ordering: 重み順でソートして枝刈り効率アップ
-        moves.sort((a,b) => this.weights[b.r][b.c] - this.weights[a.r][a.c]);
+        // Move Ordering: 探索効率化のため、有望な手（角など）から先に調べる
+        // 重み評価が高い順にソート
+        moves.sort((a,b) => {
+            // 簡易的な評価値比較
+            let scoreA = this.weights[a.r][a.c];
+            let scoreB = this.weights[b.r][b.c];
+            return scoreB - scoreA;
+        });
 
         for (let m of moves) {
             const nb = this.clone(board);
@@ -149,11 +162,6 @@ class UltimateAI {
             return this.minimax(board, depth-1, alpha, beta, !isMax, player);
         }
 
-        // Move Ordering (Simple)
-        // 深い探索では毎回ソートすると重いので、上位階層や残り手数が少ない時のみソート等の工夫も可。
-        // ここではコードを単純に保つためソートなし、または単純な重みソートのみ適用可。
-        // 高速化のため、Minimax内部ではソートを省略します（getBestMoveでの初期ソートが効くため）
-
         if(isMax) {
             let max = -Infinity;
             for(let m of moves) {
@@ -179,12 +187,12 @@ class UltimateAI {
         }
     }
 
-    // ★評価関数の改善：重み + モビリティ + 確定石★
+    // ★修正2：評価関数への「絶対ルール」の追加★
     evaluate(board, player) {
         const opp = 3-player;
         let score = 0;
         
-        // 1. 位置の重み
+        // 1. 基本重み（Weights）
         for(let r=0; r<8; r++) {
             for(let c=0; c<8; c++) {
                 if(board[r][c] === player) score += this.weights[r][c];
@@ -192,21 +200,41 @@ class UltimateAI {
             }
         }
 
-        // 2. 確定石（Corner）ボーナス
-        // 重みテーブルでも表現できますが、絶対的な安全地帯として
-        // 明示的に加点することで、読みの抜けを防ぎます。
-        const corners = [[0,0], [0,7], [7,0], [7,7]];
-        for(const [cr, cc] of corners) {
-            if(board[cr][cc] === player) score += 150; 
-            else if(board[cr][cc] === opp) score -= 150;
+        // 2. 確定石（Corner）ボーナス & 危険地帯ペナルティ（絶対ルール）
+        const corners = [
+            {r:0, c:0, key:'0,0'}, {r:0, c:7, key:'0,7'}, 
+            {r:7, c:0, key:'7,0'}, {r:7, c:7, key:'7,7'}
+        ];
+
+        for(let corner of corners) {
+            const stone = board[corner.r][corner.c];
+            
+            if (stone === player) {
+                // 隅を取っていれば超加点（重みがどうあろうと優先）
+                score += 500;
+            } else if (stone === opp) {
+                // 取られていれば減点
+                score -= 500;
+            } else {
+                // 隅が「空いている」場合のみ、その周辺（X, C）のチェックを行う
+                const dangers = this.dangerMap[corner.key];
+                for(let d of dangers) {
+                    const dStone = board[d.r][d.c];
+                    if(dStone === player) {
+                        // 隅が空いているのにX/C打ちしている -> 強烈なペナルティ
+                        score -= 300; 
+                    } else if (dStone === opp) {
+                        // 相手がやっている -> チャンスなので加点
+                        score += 300;
+                    }
+                }
+            }
         }
 
         // 3. モビリティ（Mobility）
-        // 相手の手数を減らす戦略
+        // 打てる箇所が多い方が有利
         const myMoves = this.getValidMoves(board, player).length;
         const oppMoves = this.getValidMoves(board, opp).length;
-        
-        // モビリティの重要度は非常に高い
         score += (myMoves - oppMoves) * 15;
 
         return score;
@@ -219,7 +247,7 @@ class UltimateAI {
             if(board[r][c] === player) diff++;
             else if(board[r][c] === opp) diff--;
         }
-        return diff * 1000;
+        return diff * 10000; // 勝ちは絶対
     }
 
     clone(b) { return b.map(r => [...r]); }
@@ -305,19 +333,15 @@ async function runTrainingLoop() {
                 if(passCount >= 2) break;
             } else {
                 passCount = 0;
-                
-                // ★学習用AIの思考ロジック改善（Top-3 Random）★
-                // 重み順にソート
+                // 学習用: 上位候補から選択するが、より上位に偏らせる
                 moves.sort((a,b) => ai.weights[b.r][b.c] - ai.weights[a.r][a.c]);
-
+                
                 let move;
-                // 20%の確率で「上位3手」からランダムに選ぶ（探索）
-                // これにより、極端な悪手（リストの最後の方にある手）を排除しつつ多様性を確保
-                if (Math.random() < 0.2) {
-                    const topN = moves.slice(0, 3); // 上位3つ（手が3つ未満なら全て）
+                // God Modeの学習は「強い手」をさらに強化することに集中
+                if (Math.random() < 0.15) {
+                    const topN = moves.slice(0, 3);
                     move = topN[Math.floor(Math.random() * topN.length)];
                 } else {
-                    // 80%は現在の一番良い手を選ぶ（活用）
                     move = moves[0];
                 }
                 ai.execute(board, move.r, move.c, cur);
