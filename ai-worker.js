@@ -1,11 +1,11 @@
 // ==========================================
-// AI Worker Logic
+// AI Worker Logic (Mobility Enhanced)
 // ==========================================
 
 // --- Storage Manager ---
 class StorageManager {
     constructor() {
-        this.dbName = 'ReversiNeuralDB_v3';
+        this.dbName = 'ReversiNeuralDB_v4_Mobility'; // バージョン変更（DBを新規作成させるため）
         this.db = null;
     }
     async init() {
@@ -47,26 +47,20 @@ class UltimateAI {
         this.storage = new StorageManager();
         this.totalGames = 0;
         
-        // Initial heuristics
+        // 初期の重み（ヒューリスティック）
+        // モビリティ導入に伴い、極端なマイナス値を少しマイルドに調整
         this.defaultWeights = [
-            [100, -40, 10,  5,  5, 10, -40, 100],
-            [-40, -80, -2, -2, -2, -2, -80, -40],
-            [ 10,  -2, -1, -1, -1, -1,  -2,  10],
-            [  5,  -2, -1, -1, -1, -1,  -2,   5],
-            [  5,  -2, -1, -1, -1, -1,  -2,   5],
-            [ 10,  -2, -1, -1, -1, -1,  -2,  10],
-            [-40, -80, -2, -2, -2, -2, -80, -40],
-            [100, -40, 10,  5,  5, 10, -40, 100]
+            [120, -20, 20,  5,  5, 20, -20, 120],
+            [-20, -40, -5, -5, -5, -5, -40, -20],
+            [ 20,  -5, 15,  3,  3, 15,  -5,  20],
+            [  5,  -5,  3,  3,  3,  3,  -5,   5],
+            [  5,  -5,  3,  3,  3,  3,  -5,   5],
+            [ 20,  -5, 15,  3,  3, 15,  -5,  20],
+            [-20, -40, -5, -5, -5, -5, -40, -20],
+            [120, -20, 20,  5,  5, 20, -20, 120]
         ];
         this.weights = JSON.parse(JSON.stringify(this.defaultWeights));
         this.directions = [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
-        
-        this.dangerZones = [
-            {r:0, c:0, targets: [{r:1, c:1, type:'X'}, {r:0, c:1, type:'C'}, {r:1, c:0, type:'C'}]},
-            {r:0, c:7, targets: [{r:1, c:6, type:'X'}, {r:0, c:6, type:'C'}, {r:1, c:7, type:'C'}]},
-            {r:7, c:0, targets: [{r:6, c:1, type:'X'}, {r:7, c:1, type:'C'}, {r:6, c:0, type:'C'}]},
-            {r:7, c:7, targets: [{r:6, c:6, type:'X'}, {r:7, c:6, type:'C'}, {r:6, c:7, type:'C'}]}
-        ];
     }
 
     async load() {
@@ -89,21 +83,26 @@ class UltimateAI {
         return this.storage.saveData(this.weights, 0);
     }
 
+    // 学習: 勝敗に応じて重みを更新
     async train(board, winner, aiPlayer) {
         if(winner === 0) return null;
-        const learningRate = 2.0;
+        
+        // 学習率（徐々に下げるのが定石だが、簡易的に固定）
+        const learningRate = 1.5;
         const sign = (winner === aiPlayer) ? 1 : -1;
         
         for(let r=0; r<8; r++) {
             for(let c=0; c<8; c++) {
                 if(board[r][c] === aiPlayer) {
                     this.weights[r][c] += sign * learningRate;
-                    // Symmetry update
+                    
+                    // 対称性を使って学習効率を4倍にする
                     this.weights[r][7-c] += sign * learningRate;
                     this.weights[7-r][c] += sign * learningRate;
                     this.weights[7-r][7-c] += sign * learningRate;
-                    // Clamp values
-                    this.weights[r][c] = Math.max(-300, Math.min(300, this.weights[r][c]));
+
+                    // 重みが発散しないように制限
+                    this.weights[r][c] = Math.max(-500, Math.min(500, this.weights[r][c]));
                 }
             }
         }
@@ -115,21 +114,28 @@ class UltimateAI {
         const moves = this.getValidMoves(board, player);
         if(moves.length === 0) return null;
         
-        // Sort by current knowledge (Depth 0)
-        moves.sort((a,b) => this.weights[b.r][b.c] - this.weights[a.r][a.c]);
-
-        // WLD / Minimax Logic
+        // 序盤の定石DBがあれば強いが、ここでは探索深さでカバー
+        // 空きマス数に応じて深さを可変にする
         const empty = this.countEmpty(board);
+        
+        // 終盤完全読み切り（14手以下なら最後まで読む）
+        // 中盤は4手読み（重い場合は3に減らす）
         let maxDepth = (empty <= 14) ? empty : 4; 
         
         let bestMove = moves[0];
         let alpha = -Infinity;
         let beta = Infinity;
 
+        // Move Ordering: 探索効率を上げるため、評価値が高そうな手から調べる
+        moves.sort((a,b) => this.weights[b.r][b.c] - this.weights[a.r][a.c]);
+
         for (let m of moves) {
             const nb = this.clone(board);
             this.execute(nb, m.r, m.c, player);
+            
+            // 再帰呼び出し
             const val = this.minimax(nb, maxDepth - 1, alpha, beta, false, player);
+            
             if (val > alpha) {
                 alpha = val;
                 bestMove = m;
@@ -138,11 +144,23 @@ class UltimateAI {
         return bestMove;
     }
 
+    // Minimax法（Alpha-Beta法による枝刈り付き）
     minimax(board, depth, alpha, beta, isMax, player) {
+        // 葉ノードまたは終局
         if(depth === 0) return this.evaluate(board, player);
+        
         const curP = isMax ? player : 3-player;
         const moves = this.getValidMoves(board, curP);
-        if(moves.length === 0) return this.evaluate(board, player);
+        
+        // パスの処理
+        if(moves.length === 0) {
+            // 相手も打てないなら終局
+            if(this.getValidMoves(board, 3-curP).length === 0) {
+                return this.evaluateFinal(board, player); // 最終石差
+            }
+            // パスして探索継続
+            return this.minimax(board, depth-1, alpha, beta, !isMax, player);
+        }
 
         if(isMax) {
             let max = -Infinity;
@@ -152,7 +170,7 @@ class UltimateAI {
                 const v = this.minimax(nb, depth-1, alpha, beta, false, player);
                 max = Math.max(max, v);
                 alpha = Math.max(alpha, v);
-                if(beta <= alpha) break;
+                if(beta <= alpha) break; // Beta Cut
             }
             return max;
         } else {
@@ -163,26 +181,52 @@ class UltimateAI {
                 const v = this.minimax(nb, depth-1, alpha, beta, true, player);
                 min = Math.min(min, v);
                 beta = Math.min(beta, v);
-                if(beta <= alpha) break;
+                if(beta <= alpha) break; // Alpha Cut
             }
             return min;
         }
     }
 
+    // ★強化された評価関数★
     evaluate(board, player) {
         const opp = 3-player;
         let score = 0;
+        
+        // 1. 位置の重み（Positional Strategy）
         for(let r=0; r<8; r++) {
             for(let c=0; c<8; c++) {
                 if(board[r][c] === player) score += this.weights[r][c];
                 else if(board[r][c] === opp) score -= this.weights[r][c];
             }
         }
+
+        // 2. モビリティ（Mobility Strategy）
+        // 自分の打てる手が多く、相手の打てる手が少ないほど有利
+        const myMoves = this.getValidMoves(board, player).length;
+        const oppMoves = this.getValidMoves(board, opp).length;
+        
+        // モビリティの重み係数（盤面状況によるが、1手あたり10〜15点相当の価値）
+        const mobilityWeight = 12; 
+        score += (myMoves - oppMoves) * mobilityWeight;
+
         return score;
     }
 
+    // 終局時の評価（石の差そのもの）
+    evaluateFinal(board, player) {
+        let diff = 0;
+        const opp = 3-player;
+        for(let r=0; r<8; r++) for(let c=0; c<8; c++) {
+            if(board[r][c] === player) diff++;
+            else if(board[r][c] === opp) diff--;
+        }
+        return diff * 1000; // 勝ちは絶対的なので大きな値を返す
+    }
+
+    // --- Utility Methods ---
     clone(b) { return b.map(r => [...r]); }
     countEmpty(b) { return b.flat().filter(x=>x===0).length; }
+    
     isValid(b, r, c, p) {
         if(b[r][c]!==0) return false;
         for(let d of this.directions) if(this.canFlip(b,r,c,d,p)) return true;
@@ -250,6 +294,12 @@ async function runTrainingLoop() {
     let gamesInSession = 0;
     let blackWins = 0;
     
+    // トレーニングループでは高速化のため、探索深さを浅くするか
+    // あるいは「学習した重み」のみで打つ（Greedy）かを選択します。
+    // ここでは「重み+モビリティ」の1手読み（深さ1）程度がバランス良いですが、
+    // 数をこなすために今まで通り重みベースのGreedyで行います。
+    // ※実戦（GET_MOVE）ではMinimaxを使うので強くなります。
+    
     while(isTraining) {
         let board = Array(8).fill(0).map(()=>Array(8).fill(0));
         board[3][3]=2; board[4][4]=2; board[3][4]=1; board[4][3]=1;
@@ -263,10 +313,13 @@ async function runTrainingLoop() {
                 if(passCount >= 2) break;
             } else {
                 passCount = 0;
-                // Epsilon-Greedy: 10% Random
+                
+                // 10%ランダム（探索）
                 let move;
-                if (Math.random() < 0.1) move = moves[Math.floor(Math.random() * moves.length)];
-                else {
+                if (Math.random() < 0.1) {
+                    move = moves[Math.floor(Math.random() * moves.length)];
+                } else {
+                    // 重みベースの高速選択
                     move = moves.sort((a,b) => ai.weights[b.r][b.c] - ai.weights[a.r][a.c])[0];
                 }
                 ai.execute(board, move.r, move.c, cur);
