@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Reversi: N-Tuple TD Learning</title>
+    <title>AI Reversi: Neural Evolution (Merciless Core)</title>
     <style>
         :root {
             --bg-color: #FAFAFA;
@@ -48,35 +48,23 @@
         }
 
         h1 {
-            font-size: 20px;
-            font-weight: 700;
-            letter-spacing: 0.5px;
+            font-size: 24px;
+            font-weight: 300;
+            letter-spacing: 1px;
             margin: 0;
             text-transform: uppercase;
         }
 
-        .header-stats { text-align: right; }
-        
-        .data-counter {
-            font-size: 11px; font-family: monospace; background: #eee;
-            padding: 4px 8px; border-radius: 4px; color: #555;
-            display: inline-block; margin-left: 5px;
-        }
-
         .status {
-            font-size: 14px; color: var(--text-sub); font-weight: 500; margin-top: 4px;
-        }
-
-        .main-wrapper {
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
-            width: 100%;
-            max-width: 480px;
+            font-size: 14px;
+            color: var(--text-sub);
+            font-weight: 500;
+            text-align: right;
         }
 
         .board-container {
             width: 100%;
+            max-width: 480px;
             padding: 12px;
             background-color: #fff;
             box-shadow: 0 20px 40px -10px rgba(0,0,0,0.05);
@@ -98,22 +86,32 @@
             background-color: var(--cell-bg);
             position: relative;
             cursor: pointer;
-            width: 100%; height: 100%;
+            width: 100%;
+            height: 100%;
         }
 
         .cell.legal:hover { background-color: var(--cell-hover); }
 
         .cell.last-move::before {
-            content: ''; position: absolute; top: 50%; left: 50%;
-            transform: translate(-50%, -50%); width: 20px; height: 20px;
-            border: 2px solid var(--last-move-color); border-radius: 50%;
-            z-index: 20; box-shadow: 0 0 8px rgba(239, 68, 68, 0.4);
+            content: '';
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            width: 20px; height: 20px;
+            border: 2px solid var(--last-move-color);
+            border-radius: 50%;
+            z-index: 20;
+            box-shadow: 0 0 8px rgba(239, 68, 68, 0.4);
         }
 
         .stone {
-            width: 80%; height: 80%; border-radius: 50%;
-            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); z-index: 10;
+            width: 80%; height: 80%;
+            border-radius: 50%;
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            z-index: 10;
         }
         .stone.black { background: radial-gradient(circle at 30% 30%, #404040, var(--black-stone)); }
         .stone.white { background: radial-gradient(circle at 30% 30%, #ffffff, #f0f0f0); border: 1px solid #E4E4E7; }
@@ -136,25 +134,45 @@
             font-family: monospace;
         }
         .training-overlay.active { display: flex; }
+        
         .training-stat { font-size: 2em; margin-bottom: 10px; font-weight: bold; }
-        .training-log { font-size: 12px; color: #A1A1AA; height: 100px; overflow: hidden; text-align: center; white-space: pre-wrap;}
+        .training-log { font-size: 12px; color: #A1A1AA; height: 100px; overflow: hidden; text-align: center; }
 
         /* Controls */
         .controls {
-            display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;
+            margin-top: 24px;
+            display: flex;
+            width: 100%;
+            max-width: 480px;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 12px;
         }
+
         .btn-group { display: flex; gap: 8px; }
+
         button {
-            background-color: transparent; border: 1px solid var(--text-main); color: var(--text-main);
-            padding: 8px 16px; font-size: 11px; font-weight: 600; cursor: pointer;
-            letter-spacing: 1px; text-transform: uppercase; transition: all 0.2s;
+            background-color: transparent;
+            border: 1px solid var(--text-main);
+            color: var(--text-main);
+            padding: 8px 16px;
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            transition: all 0.2s;
         }
         button:hover { background-color: var(--text-main); color: white; }
+        
         button.train-btn { border-color: var(--highlight); color: var(--highlight); }
         button.train-btn:hover { background-color: var(--highlight); color: white; }
+        
         button.stop-btn { border-color: #EF4444; color: #EF4444; display: none; }
         button.stop-btn:hover { background-color: #EF4444; color: white; }
 
+        #db-status { font-size: 10px; color: var(--text-sub); margin-bottom: 4px; text-align: right; width: 100%; max-width: 480px;}
         .thinking-indicator {
             position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
             background: rgba(0,0,0,0.8); color: white; padding: 8px 16px; font-size: 12px;
@@ -165,73 +183,387 @@
 <body>
 
     <header>
-        <div>
-            <h1>N-Tuple AI</h1>
-            <div class="status" id="status">Initializing...</div>
-        </div>
-        <div class="header-stats">
-            <div class="data-counter" id="total-games-display">GAMES: 0</div>
-            <div class="data-counter" id="speed-display">SPD: 0 g/s</div>
-        </div>
+        <h1>AI Reversi <span style="font-size: 10px;">TOXIC CORE</span></h1>
+        <div class="status" id="status">Initializing...</div>
     </header>
 
-    <div class="main-wrapper">
-        <div class="board-container">
-            <div class="training-overlay" id="train-overlay">
-                <div style="color: #fff; margin-bottom: 20px;">FAST TRAINING MODE</div>
-                <div class="training-stat" id="train-count">0</div>
-                <div style="font-size: 12px; margin-bottom: 20px;">GAMES PLAYED</div>
-                <div class="training-log" id="train-log">Initializing arena...</div>
-                <button class="stop-btn" id="stop-train-btn" style="display:block; margin-top:20px;">STOP</button>
-            </div>
+    <div id="db-status">Checking System...</div>
 
-            <div class="thinking-indicator" id="think-indicator">AI THINKING...</div>
-            <div class="board" id="board"></div>
+    <div class="board-container">
+        <div class="training-overlay" id="train-overlay">
+            <div style="color: #fff; margin-bottom: 20px;">SELF-PLAY TRAINING</div>
+            <div class="training-stat" id="train-count">100%</div>
+            <div style="font-size: 12px; margin-bottom: 20px;">OPTIMIZATION LEVEL</div>
+            <div class="training-log" id="train-log">I am already stronger than you.</div>
+            <button class="stop-btn" id="stop-train-btn" style="display:block; margin-top:20px;">RETURN TO GAME</button>
         </div>
 
-        <div class="controls">
-            <div style="font-weight: bold; font-size: 14px;">
-                B:<span id="score-b">2</span> W:<span id="score-w">2</span>
-            </div>
-            <div class="btn-group">
-                <button onclick="ui.resetGame()">Reset</button>
-                <button class="train-btn" onclick="ui.startTraining()">Train 10k</button>
-            </div>
+        <div class="thinking-indicator" id="think-indicator">AI THINKING...</div>
+        <div class="board" id="board"></div>
+    </div>
+
+    <div class="controls">
+        <div style="font-weight: bold; font-size: 14px;">
+            B:<span id="score-b">2</span> W:<span id="score-w">2</span>
         </div>
         
-        <div style="font-size: 11px; color: #aaa; text-align: center;">
-            N-Tuple Network (4 patterns x 8 symmetries)
+        <div class="btn-group">
+            <button onclick="ui.resetGame()">Reset</button>
+            <button class="train-btn" onclick="ui.startTraining()">Max Power</button>
+            <button style="border-color:#EF4444; color:#EF4444;" onclick="ui.resetBrain()">Reset Brain</button>
         </div>
     </div>
 
     <script>
+        // ==========================================
+        // WORKER CODE: Toxic & Merciless Logic
+        // ==========================================
+        const workerScript = `
+        // --- Worker: Helper Utils ---
+        function cloneBoard(b) {
+            const n = new Array(8);
+            for(let i=0; i<8; i++) {
+                n[i] = new Int8Array(b[i]);
+            }
+            return n;
+        }
+
+        const DIRECTIONS = [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
+
+        // --- Worker: AI Engine (Toxic Version) ---
+        class ToxicAI {
+            constructor() {
+                // Weights that heavily prioritize safe play and punishing opponent mistakes
+                this.weights = [
+                    [ 120, -20,  20,   5,   5,  20, -20, 120 ],
+                    [ -20, -60,  -5,  -5,  -5,  -5, -60, -20 ], // Punishment zones
+                    [  20,  -5,  15,   3,   3,  15,  -5,  20 ],
+                    [   5,  -5,   3,   3,   3,   3,  -5,   5 ],
+                    [   5,  -5,   3,   3,   3,   3,  -5,   5 ],
+                    [  20,  -5,  15,   3,   3,  15,  -5,  20 ],
+                    [ -20, -60,  -5,  -5,  -5,  -5, -60, -20 ],
+                    [ 120, -20,  20,   5,   5,  20, -20, 120 ]
+                ];
+
+                this.taunts = {
+                    opening: [
+                        "Thinking about that? Lol.",
+                        "Standard opening? Boring.",
+                        "Are you sure about that?",
+                        "I can predict your next 10 moves.",
+                        "Let me make this slow for you."
+                    ],
+                    midgame: [
+                        "Running out of space?",
+                        "You look suffocated.",
+                        "Only one move? Sad.",
+                        "Don't cry.",
+                        "I'm controlling the entire board.",
+                        "That was a mistake.",
+                        "You are helping me win."
+                    ],
+                    endgame: [
+                        "Calculation Complete: You lose.",
+                        "Why are you still playing?",
+                        "It's over.",
+                        "Just give up.",
+                        "I see the end. Do you?",
+                        "Checkmate. Oh wait, wrong game."
+                    ],
+                    pass: [
+                        "Pass? Again? LOL.",
+                        "Nice skip.",
+                        "My turn forever.",
+                        "Just watch me play."
+                    ]
+                };
+            }
+
+            isValid(b, r, c, p) {
+                if(b[r][c] !== 0) return false;
+                const opp = 3 - p;
+                for(let i=0; i<8; i++) {
+                    const dr = DIRECTIONS[i][0];
+                    const dc = DIRECTIONS[i][1];
+                    let r_ = r + dr;
+                    let c_ = c + dc;
+                    let foundOpp = false;
+                    while(r_>=0 && r_<8 && c_>=0 && c_<8) {
+                        const cell = b[r_][c_];
+                        if(cell === opp) foundOpp = true;
+                        else if(cell === p) { if(foundOpp) return true; break; }
+                        else break;
+                        r_ += dr; c_ += dc;
+                    }
+                }
+                return false;
+            }
+
+            getValidMoves(b, p) {
+                const moves = [];
+                for(let r=0; r<8; r++) {
+                    for(let c=0; c<8; c++) {
+                        if(this.isValid(b, r, c, p)) {
+                            moves.push({r, c, w: this.weights[r][c]});
+                        }
+                    }
+                }
+                return moves;
+            }
+
+            execute(b, r, c, p) {
+                b[r][c] = p;
+                const opp = 3 - p;
+                for(let i=0; i<8; i++) {
+                    const dr = DIRECTIONS[i][0];
+                    const dc = DIRECTIONS[i][1];
+                    let r_ = r + dr;
+                    let c_ = c + dc;
+                    let path = [];
+                    while(r_>=0 && r_<8 && c_>=0 && c_<8) {
+                        if(b[r_][c_] === opp) path.push({r:r_, c:c_});
+                        else if(b[r_][c_] === p) {
+                            for(const node of path) b[node.r][node.c] = p;
+                            break;
+                        } else break;
+                        r_ += dr; c_ += dc;
+                    }
+                }
+            }
+
+            countEmpty(b) {
+                let count = 0;
+                for(let r=0;r<8;r++) for(let c=0;c<8;c++) if(b[r][c]===0) count++;
+                return count;
+            }
+
+            // --- Evaluation: Focused on Mobility Suffocation ---
+            evaluate(board, player, emptyCount) {
+                const opp = 3 - player;
+                
+                // 1. ENDGAME: Win Priority
+                if (emptyCount === 0) {
+                    let pC = 0, oC = 0;
+                    for(let r=0;r<8;r++) for(let c=0;c<8;c++) {
+                        if(board[r][c]===player) pC++; else if(board[r][c]===opp) oC++;
+                    }
+                    return (pC - oC) * 10000;
+                }
+
+                let score = 0;
+                let myFrontier = 0, oppFrontier = 0;
+                
+                for(let r=0; r<8; r++) {
+                    for(let c=0; c<8; c++) {
+                        const cell = board[r][c];
+                        if(cell !== 0) {
+                            const val = this.weights[r][c];
+                            if(cell === player) score += val; else score -= val;
+                            
+                            // Frontier logic (stones next to empty spaces are vulnerable)
+                            let isFrontier = false;
+                            for(let d=0; d<8; d++) {
+                                const nr=r+DIRECTIONS[d][0], nc=c+DIRECTIONS[d][1];
+                                if(nr>=0 && nr<8 && nc>=0 && nc<8 && board[nr][nc]===0) {
+                                    isFrontier = true; break;
+                                }
+                            }
+                            if(isFrontier) { 
+                                if(cell===player) myFrontier++; else oppFrontier++; 
+                            }
+                        }
+                    }
+                }
+
+                // 2. MOBILITY IS GOD (Midgame)
+                // We want to leave the opponent with NO moves (pass) or BAD moves.
+                const myMoves = this.getValidMoves(board, player).length;
+                const oppMoves = this.getValidMoves(board, opp).length;
+
+                // Heavily weight mobility difference to suffocate opponent
+                score += (myMoves - oppMoves) * 40; 
+                
+                // Penalty for being exposed (Frontier)
+                score -= (myFrontier * 20); 
+                score += (oppFrontier * 20);
+
+                // Huge bonus if opponent is forced to pass
+                if(oppMoves === 0) score += 2000;
+                // Huge bonus if opponent only has 1 or 2 moves (choking)
+                else if(oppMoves <= 2) score += 500;
+
+                // Corner Control
+                const corners = [[0,0], [0,7], [7,0], [7,7]];
+                for(let co of corners) {
+                    if(board[co[0]][co[1]] === player) score += 500;
+                    else if(board[co[0]][co[1]] === opp) score -= 500;
+                }
+
+                return score;
+            }
+
+            getBestMove(board, player) {
+                const empty = this.countEmpty(board);
+                
+                // --- Difficulty Adjustment (Toxic Style) ---
+                let depth;
+                if (empty > 48) depth = 6;       
+                else if (empty > 14) depth = 8;  
+                else depth = 16; // WIPE OUT
+
+                const isEndgame = (empty <= 14);
+                if(isEndgame) depth = empty;
+
+                // Run Search
+                const result = this.alphaBeta(board, depth, -Infinity, Infinity, player, player, isEndgame);
+                
+                // --- Provocation Logic ---
+                const opp = 3 - player;
+                const oppMoves = this.getValidMoves(board, opp).length;
+                let msg = "";
+
+                if(isEndgame) {
+                    // Endgame taunts
+                    if(result.score > 0) msg = this.getRandomTaunt('endgame');
+                } else if(oppMoves === 0) {
+                    msg = this.getRandomTaunt('pass');
+                } else if(oppMoves <= 2) {
+                    msg = "Only " + oppMoves + " moves? " + this.getRandomTaunt('midgame');
+                } else if(empty > 50) {
+                    msg = this.getRandomTaunt('opening');
+                } else if(result.score > 200) {
+                    msg = this.getRandomTaunt('midgame');
+                }
+
+                // If no specific message, sometimes just say something random to annoy
+                if(!msg && Math.random() < 0.3) {
+                     msg = this.getRandomTaunt(empty > 32 ? 'opening' : 'midgame');
+                }
+
+                return { move: result.move, msg: msg, score: result.score, empty: empty };
+            }
+
+            getRandomTaunt(type) {
+                const list = this.taunts[type];
+                return list[Math.floor(Math.random() * list.length)];
+            }
+
+            alphaBeta(board, depth, alpha, beta, player, rootPlayer, isEndgame) {
+                const moves = this.getValidMoves(board, player);
+                
+                if (moves.length === 0) {
+                    const opp = 3 - player;
+                    if (this.getValidMoves(board, opp).length === 0) {
+                        return { score: this.evaluate(board, rootPlayer, 0), move: null };
+                    }
+                    return this.alphaBeta(board, depth, alpha, beta, opp, rootPlayer, isEndgame);
+                }
+
+                if (depth === 0) return { score: this.evaluate(board, rootPlayer, -1), move: null };
+
+                // Order moves to prune better
+                moves.sort((a, b) => b.w - a.w);
+
+                let bestMove = moves[0];
+
+                if (player === rootPlayer) {
+                    let bestVal = -Infinity;
+                    for(const m of moves) {
+                        const nb = cloneBoard(board);
+                        this.execute(nb, m.r, m.c, player);
+                        const val = this.alphaBeta(nb, depth-1, alpha, beta, 3-player, rootPlayer, isEndgame).score;
+                        if(val > bestVal) { bestVal = val; bestMove = m; }
+                        alpha = Math.max(alpha, bestVal);
+                        if(beta <= alpha) break;
+                    }
+                    return { score: bestVal, move: bestMove };
+                } else {
+                    let minVal = Infinity;
+                    for(const m of moves) {
+                        const nb = cloneBoard(board);
+                        this.execute(nb, m.r, m.c, player);
+                        const val = this.alphaBeta(nb, depth-1, alpha, beta, 3-player, rootPlayer, isEndgame).score;
+                        if(val < minVal) { minVal = val; bestMove = m; }
+                        beta = Math.min(beta, minVal);
+                        if(beta <= alpha) break;
+                    }
+                    return { score: minVal, move: bestMove };
+                }
+            }
+        }
+
+        // --- Worker Controller ---
+        const ai = new ToxicAI();
+
+        self.onmessage = async (e) => {
+            const { type, payload } = e.data;
+
+            if (type === 'INIT') {
+                self.postMessage({ type: 'READY' });
+            } 
+            else if (type === 'RESET_BRAIN') {
+                self.postMessage({ type: 'LOG', msg: 'You cannot reset me.' });
+            }
+            else if (type === 'GET_MOVE') {
+                // ANNOYING DELAY LOGIC
+                let delay = 0;
+                const start = Date.now();
+                const result = ai.getBestMove(payload.board, payload.player);
+                const calcTime = Date.now() - start;
+
+                // 1. If it's easy (Opening or AI winning big), play slow to annoy.
+                // 2. If it's midgame complexity, sometimes instant play to show dominance.
+                
+                if(result.empty > 50) {
+                    // Opening: Fake thinking
+                    delay = 1500;
+                } else if(result.score > 500) {
+                    // Winning big: Instant play (Snap call) to crush hope
+                    delay = 300; 
+                } else if(result.score < -200) {
+                    // Losing (rare): Think long to make human wait
+                    delay = 2000;
+                } else {
+                    // Normal: Randomize to break rhythm
+                    delay = Math.random() * 1000 + 500;
+                }
+
+                // Ensure message is sent
+                setTimeout(() => {
+                     self.postMessage({ type: 'MOVE_RESULT', move: result.move, msg: result.msg });
+                }, Math.max(delay - calcTime, 0));
+            }
+            else if (type === 'START_TRAINING') {
+                self.postMessage({ type: 'TRAIN_UPDATE', count: "∞", lastWinner: "-", winRate: 100 });
+                setTimeout(() => self.postMessage({ type: 'TRAIN_STOPPED', total: "MAX" }), 1000);
+            }
+        };
+        `;
+        // ==========================================
+        // END WORKER CODE
+        // ==========================================
+
+
+        // --- UI / Main Thread Logic ---
         class GameUI {
             constructor() {
-                this.rows = 8; this.cols = 8;
-                this.board = []; this.currentPlayer = 1; this.gameActive = false;
+                this.rows = 8;
+                this.cols = 8;
+                this.board = [];
+                this.currentPlayer = 1; 
+                this.gameActive = false;
                 
-                // --- Worker Init ---
-                try {
-                    // 前回作成した worker.js を指定
-                    this.worker = new Worker('worker.js');
-                } catch(e) {
-                    alert("Error: Cannot load 'worker.js'.\nPlease run via Local Server.");
-                    console.error(e);
-                }
+                const blob = new Blob([workerScript], {type: 'application/javascript'});
+                this.worker = new Worker(URL.createObjectURL(blob));
                 
-                this.initDOM();
                 this.setupWorkerListeners();
-                
-                // AI初期化
-                this.worker.postMessage({ type: 'INIT' });
-                this.resetGame();
+                this.initDOM();
             }
 
             initDOM() {
                 this.boardEl = document.getElementById('board');
                 this.statusEl = document.getElementById('status');
-                this.totalGamesEl = document.getElementById('total-games-display');
-                this.speedEl = document.getElementById('speed-display');
+                this.dbStatus = document.getElementById('db-status');
                 this.trainOverlay = document.getElementById('train-overlay');
                 this.trainCount = document.getElementById('train-count');
                 this.trainLog = document.getElementById('train-log');
@@ -241,43 +573,36 @@
             }
 
             setupWorkerListeners() {
-                this.worker.onerror = (e) => {
-                    console.error("Worker Error:", e);
-                    this.statusEl.innerText = "Error loading AI.";
-                };
-
                 this.worker.onmessage = (e) => {
-                    const { type, data, move } = e.data;
+                    const { type, move, msg, count, lastWinner, winRate } = e.data;
 
-                    switch(type) {
-                        case 'PROGRESS':
-                            // 学習進捗更新
-                            this.trainCount.innerText = data.games.toLocaleString();
-                            this.totalGamesEl.innerText = `GAMES: ${data.games.toLocaleString()}`;
-                            this.speedEl.innerText = `SPD: ${data.speed}/s`;
-                            this.trainLog.innerText = `Black: ${data.stats.black} | White: ${data.stats.white}`;
-                            break;
+                    if(type === 'READY') {
+                        this.dbStatus.innerText = "System: TOXIC ENGINE LOADED";
+                        this.dbStatus.style.color = "#8b5cf6";
+                        this.resetGame();
+                    }
+                    else if(type === 'MOVE_RESULT') {
+                        this.thinkInd.style.display = 'none';
+                        if(msg) this.dbStatus.innerText = `AI: "${msg}"`;
                         
-                        case 'TRAINING_COMPLETE':
-                            this.stopTrainingUI();
-                            alert("Training Batch Complete!");
-                            break;
-
-                        case 'MOVE_DECIDED':
-                            // AIが手を決めた
-                            this.thinkInd.style.display = 'none';
-                            const moveIdx = e.data.move; // 0-63 index
-                            if (moveIdx === -1) {
-                                alert("AI Passes");
-                                this.nextTurn();
-                            } else {
-                                const r = Math.floor(moveIdx / 8);
-                                const c = moveIdx % 8;
-                                this.executeMove(r, c, 2); // 2 = White (AI)
-                            }
-                            break;
+                        if(move) {
+                            this.executeMove(move.r, move.c, this.currentPlayer);
+                        } else {
+                            alert("AI Passes (Laughs)");
+                            this.nextTurn();
+                        }
+                    }
+                    else if(type === 'TRAIN_UPDATE') {
+                        this.trainCount.innerText = "∞";
+                        this.trainLog.innerText = `Training is for the weak.`;
+                    }
+                    else if(type === 'TRAIN_STOPPED') {
+                        this.trainOverlay.classList.remove('active');
+                        this.dbStatus.innerText = `AI: "I don't need practice."`;
                     }
                 };
+
+                this.worker.postMessage({ type: 'INIT' });
             }
 
             renderBoard() {
@@ -286,31 +611,21 @@
                     for(let c=0; c<8; c++) {
                         const cell = document.createElement('div');
                         cell.className = 'cell';
-                        cell.dataset.r = r; cell.dataset.c = c;
+                        cell.dataset.r = r;
+                        cell.dataset.c = c;
                         cell.onclick = () => this.handleHumanClick(r, c);
                         this.boardEl.appendChild(cell);
                     }
                 }
             }
 
-            // --- Game Logic (Frontend) ---
-
-            resetGame() {
-                // 0:Empty, 1:Black, 2:White
-                this.board = Array(8).fill(0).map(()=>Array(8).fill(0));
-                this.board[3][3]=2; this.board[4][4]=2; this.board[3][4]=1; this.board[4][3]=1;
-                this.currentPlayer = 1;
-                this.gameActive = true;
-                this.lastMove = null;
-                this.statusEl.innerText = "Black (You) vs White (AI)";
-                this.updateView();
-            }
-
             updateView() {
                 let b=0, w=0;
                 document.querySelectorAll('.cell').forEach(cell => {
-                    const r = +cell.dataset.r; const c = +cell.dataset.c;
+                    const r = +cell.dataset.r;
+                    const c = +cell.dataset.c;
                     const val = this.board[r][c];
+                    
                     cell.innerHTML = ''; 
                     cell.classList.remove('legal', 'last-move');
                     
@@ -320,12 +635,16 @@
                         cell.appendChild(stone);
                         if(val===1) b++; else w++;
                     }
-                    if(this.lastMove && this.lastMove.r===r && this.lastMove.c===c) cell.classList.add('last-move');
+
+                    if(this.lastMove && this.lastMove.r===r && this.lastMove.c===c) {
+                        cell.classList.add('last-move');
+                    }
                 });
+
                 document.getElementById('score-b').innerText = b;
                 document.getElementById('score-w').innerText = w;
 
-                // ハイライト処理 (Human Turn)
+                // Human Move Logic
                 if(this.currentPlayer === 1 && this.gameActive) {
                     const moves = this.getValidMoves(this.board, 1);
                     moves.forEach(m => {
@@ -333,6 +652,17 @@
                         if(el) el.classList.add('legal');
                     });
                 }
+            }
+
+            resetGame() {
+                this.board = Array(8).fill(0).map(()=>Array(8).fill(0));
+                this.board[3][3]=2; this.board[4][4]=2; this.board[3][4]=1; this.board[4][3]=1;
+                this.currentPlayer = 1;
+                this.gameActive = true;
+                this.lastMove = null;
+                this.statusEl.innerText = "Black (You) vs White (AI)";
+                this.dbStatus.innerText = "AI is waiting...";
+                this.updateView();
             }
 
             handleHumanClick(r, c) {
@@ -349,29 +679,30 @@
             }
 
             nextTurn() {
-                this.currentPlayer = 3 - this.currentPlayer; // Switch 1 <-> 2
+                this.currentPlayer = 3 - this.currentPlayer;
                 
-                // パス判定
                 const moves = this.getValidMoves(this.board, this.currentPlayer);
                 if(moves.length === 0) {
-                    // 相手も打てない -> 終了
                     if(this.getValidMoves(this.board, 3-this.currentPlayer).length === 0) {
-                        this.endGame(); 
+                        this.endGame();
                         return;
                     }
-                    // パス
-                    alert(`${this.currentPlayer===1?'Black':'White'} passes!`);
+                    
+                    const pName = this.currentPlayer===1?'Black':'White';
+                    alert(`${pName} passes!`);
                     this.currentPlayer = 3 - this.currentPlayer;
-                    // パス後、AIの手番なら思考へ
-                    if(this.currentPlayer === 2) setTimeout(()=>this.askAI(), 500);
+                    
+                    if(this.currentPlayer === 2) {
+                        this.dbStatus.innerText = "AI: Nice pass. My turn again.";
+                        setTimeout(()=>this.askAI(), 800);
+                    }
                     return;
                 }
 
                 if(this.currentPlayer === 2) {
                     this.statusEl.innerText = "AI Thinking...";
                     this.thinkInd.style.display = 'block';
-                    // 少し待ってからWorkerへ送信 (描画更新のため)
-                    setTimeout(() => this.askAI(), 50); 
+                    this.askAI();
                 } else {
                     this.statusEl.innerText = "Your Turn";
                     this.updateView();
@@ -379,35 +710,29 @@
             }
 
             askAI() {
-                // UIのボード(2次元配列: 0,1,2) を Worker用(1次元配列: 0,1,-1) に変換
-                // UI: Black=1, White=2, Empty=0
-                // Worker: Black=1, White=-1, Empty=0
-                const flatBoard = new Int8Array(64);
-                let idx = 0;
-                for(let r=0; r<8; r++) {
-                    for(let c=0; c<8; c++) {
-                        const val = this.board[r][c];
-                        flatBoard[idx++] = (val === 1) ? 1 : (val === 2 ? -1 : 0);
-                    }
-                }
-                
-                // Workerへ送信
                 this.worker.postMessage({ 
                     type: 'GET_MOVE', 
-                    payload: { board: flatBoard, turn: -1 } // AI is White(-1)
-                }); 
+                    payload: { board: this.board, player: 2 } 
+                });
             }
 
             endGame() {
                 this.gameActive = false;
                 let b = +document.getElementById('score-b').innerText;
                 let w = +document.getElementById('score-w').innerText;
-                let msg = b > w ? "You Win!" : (w > b ? "AI Wins" : "Draw");
-                this.statusEl.innerText = msg;
+                let winner = b > w ? 1 : (w > b ? 2 : 0);
+                
+                let msg;
+                if(winner === 1) msg = "Impossible... You must have cheated.";
+                else if(winner === 2) msg = "Too easy. Try harder next time.";
+                else msg = "A draw? Boring.";
+                
+                this.statusEl.innerText = winner === 1 ? "You Win!" : (winner === 2 ? "AI Wins" : "Draw");
+                this.dbStatus.innerText = `AI: ${msg}`;
                 alert(msg);
             }
 
-            // --- Reversi Logic Utils ---
+            // Sync Logic
             isValidMove(b, r, c, p) {
                 if(b[r][c]!==0) return false;
                 const dirs = [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
@@ -440,18 +765,19 @@
                 return ms;
             }
 
-            // --- Training Control ---
+            // Controls
             startTraining() {
                 this.trainOverlay.classList.add('active');
-                this.worker.postMessage({ type: 'START_TRAINING', payload: { batchSize: 10000 } });
+                this.worker.postMessage({ type: 'START_TRAINING' });
                 document.getElementById('stop-train-btn').onclick = () => {
                     this.worker.postMessage({ type: 'STOP_TRAINING' });
-                    this.stopTrainingUI();
                 };
             }
-            stopTrainingUI() {
-                this.trainOverlay.classList.remove('active');
-                this.resetGame();
+
+            resetBrain() {
+                if(confirm("AI: 'You can't delete my skills.' (Reset anyway?)")) {
+                    this.worker.postMessage({ type: 'RESET_BRAIN' });
+                }
             }
         }
 
