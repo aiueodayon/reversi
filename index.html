@@ -456,7 +456,11 @@
                     if (this.getValidMoves(board, opp).length === 0) {
                         return { score: this.evaluate(board, rootPlayer, 0), move: null };
                     }
-                    return this.alphaBeta(board, depth, alpha, beta, opp, rootPlayer, isEndgame);
+                    
+                    // FIXED: Pass correctly by returning NULL move for this node
+                    // We must continue search with opponent but NOT return opponent's move as our move
+                    const res = this.alphaBeta(board, depth, alpha, beta, opp, rootPlayer, isEndgame);
+                    return { score: res.score, move: null }; 
                 }
 
                 if (depth === 0) return { score: this.evaluate(board, rootPlayer, -1), move: null };
@@ -588,7 +592,9 @@
                         if(move) {
                             this.executeMove(move.r, move.c, this.currentPlayer);
                         } else {
-                            alert("AI Passes (Laughs)");
+                            // AI returned null move -> PASS
+                            const pName = this.currentPlayer===1?'Black':'White';
+                            alert(`AI (White) passes!`);
                             this.nextTurn();
                         }
                     }
@@ -683,6 +689,7 @@
                 
                 const moves = this.getValidMoves(this.board, this.currentPlayer);
                 if(moves.length === 0) {
+                    // 現在の手番プレイヤーが打てない場合
                     if(this.getValidMoves(this.board, 3-this.currentPlayer).length === 0) {
                         this.endGame();
                         return;
@@ -690,6 +697,8 @@
                     
                     const pName = this.currentPlayer===1?'Black':'White';
                     alert(`${pName} passes!`);
+                    
+                    // 手番を戻す
                     this.currentPlayer = 3 - this.currentPlayer;
                     
                     if(this.currentPlayer === 2) {
@@ -699,6 +708,7 @@
                     return;
                 }
 
+                // AI Turn
                 if(this.currentPlayer === 2) {
                     this.statusEl.innerText = "AI Thinking...";
                     this.thinkInd.style.display = 'block';
